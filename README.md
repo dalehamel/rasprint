@@ -1,3 +1,5 @@
+![ci status](https://travis-ci.org/dalehamel/rasprint.svg)
+
 # RasPrint
 
 RasPrint creates a single-purpose OS that runs an AirPrint server.
