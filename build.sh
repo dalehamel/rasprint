@@ -24,12 +24,12 @@ cexec()
 setup()
 {
   apt-get -f install -y qemu-user-static debootstrap git bc squashfs-tools
-  
+
   # Prepare the chroot
   mkdir -p $ROOTFS
   debootstrap --arch armhf --foreign --variant minbase --include $INCLUDE $DISTRO $ROOTFS http://ports.ubuntu.com
   cp `which qemu-arm-static` $ROOTFS/usr/bin/
-  
+
   # Finish debootstrap in chroot with emulated arm processor
   cexec /debootstrap/debootstrap --second-stage
 }
@@ -180,7 +180,7 @@ add_printers
 EOF
 
   chmod +x $ROOTFS/usr/local/bin/add_printer
-  
+
   cat > $ROOTFS/etc/udev/rules.d/91-dymo-labelmanager-pnp.rules << EOF
 # DYMO LabelManager PNP
 SUBSYSTEMS=="usb", ATTRS{idVendor}=="0922", ATTRS{idProduct}=="1001", \
@@ -250,23 +250,23 @@ kernel_build()
   rm -rf $BOOT
   mkdir -p $BOOT
   cd $ROOT
-  
+
   # https://www.raspberrypi.org/documentation/linux/kernel/building.md
   # Get the arm cross-build toolchain
   [ -d $ROOT/tools ] || git clone https://github.com/raspberrypi/tools
   cd $ROOT/tools && git fetch && git reset --hard origin/master && cd $ROOT
   export PATH=$ROOT/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/bin/:$PATH
-  
+
   # Get the kernel
   [ -d $ROOT/linux ] || git clone --depth=1 https://github.com/raspberrypi/linux
   cd $ROOT/linux && git fetch && git reset --hard origin/master && cd $ROOT
-  
+
   # Build the kernel
   cd $ROOT/linux
   KERNEL=kernel7 # ASSUMES RPi2
   make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- bcm2709_defconfig # ASSUMES RPi2
   make -j`nproc` ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- zImage modules dtbs
-  
+
   # Install modules
   make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- INSTALL_MOD_PATH=$ROOTFS modules_install
 }
@@ -276,15 +276,15 @@ generate_initramfs()
 {
   cd $ROOT/linux
   kversion=$(strings arch/arm/boot/Image  | grep -i modversions | awk '{print $1}')
-  
+
   ########################
   # Initramfs setup
   ########################
-  
+
   # Install live boot, which will be needed for generating live initramfs
   cexec apt-get -f install -y live-boot
   cexec update-initramfs -c -k $kversion
-  cp $ROOTFS/boot/initrd.img-$kversion $BOOT/initrd.img  
+  cp $ROOTFS/boot/initrd.img-$kversion $BOOT/initrd.img
 }
 
 live_system()
@@ -313,14 +313,14 @@ initramfs initrd.img
 EOF
   # Copy kernel to BOOT
   ./scripts/mkknlimg arch/arm/boot/zImage $BOOT/kernel.img
-  
+
   # Set up device tree binaries
   cp arch/arm/boot/dts/*.dtb $BOOT
   mkdir -p $BOOT/overlays/
   cp arch/arm/boot/dts/overlays/*.dtb* $BOOT/overlays/
-  
+
   # Copy magic firmware files
-  
+
   cd /tmp
   wget https://github.com/raspberrypi/firmware/archive/master.tar.gz
   tar -xpf master.tar.gz
