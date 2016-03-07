@@ -23,13 +23,13 @@ cexec()
 
 setup()
 {
-  apt-get -f install -y qemu-user-static debootstrap git bc squashfs-tools
-
+  apt-get -f install -y qemu-user-static debootstrap git bc squashfs-tools mtools
+  
   # Prepare the chroot
   mkdir -p $ROOTFS
   debootstrap --arch armhf --foreign --variant minbase --include $INCLUDE $DISTRO $ROOTFS http://ports.ubuntu.com
   cp `which qemu-arm-static` $ROOTFS/usr/bin/
-
+  
   # Finish debootstrap in chroot with emulated arm processor
   cexec /debootstrap/debootstrap --second-stage
 }
@@ -93,6 +93,8 @@ Port 631
 Listen *:631  # If cups is only listening on localhost:631, then you won't be able to see any shared printers
 Listen /var/run/cups/cups.sock
 
+JobRetryInterval 5 # retry failed jobs after 5 seconds if retry policy set
+
 # Share local printers on the local network.
 Browsing On
 BrowseLocalProtocols dnssd
@@ -153,6 +155,7 @@ add_printer()
           -o 'media=om_w18h252_6.21x88.9mm' \
           -o 'sides=one-sided' \
           -E
+    lpadmin -p DymoPi -o printer-error-policy=retry-job
   fi
 }
 
@@ -180,7 +183,7 @@ add_printers
 EOF
 
   chmod +x $ROOTFS/usr/local/bin/add_printer
-
+  
   cat > $ROOTFS/etc/udev/rules.d/91-dymo-labelmanager-pnp.rules << EOF
 # DYMO LabelManager PNP
 SUBSYSTEMS=="usb", ATTRS{idVendor}=="0922", ATTRS{idProduct}=="1001", \
@@ -250,23 +253,23 @@ kernel_build()
   rm -rf $BOOT
   mkdir -p $BOOT
   cd $ROOT
-
+  
   # https://www.raspberrypi.org/documentation/linux/kernel/building.md
   # Get the arm cross-build toolchain
   [ -d $ROOT/tools ] || git clone https://github.com/raspberrypi/tools
   cd $ROOT/tools && git fetch && git reset --hard origin/master && cd $ROOT
   export PATH=$ROOT/tools/arm-bcm2708/gcc-linaro-arm-linux-gnueabihf-raspbian-x64/bin/:$PATH
-
+  
   # Get the kernel
   [ -d $ROOT/linux ] || git clone --depth=1 https://github.com/raspberrypi/linux
   cd $ROOT/linux && git fetch && git reset --hard origin/master && cd $ROOT
-
+  
   # Build the kernel
   cd $ROOT/linux
   KERNEL=kernel7 # ASSUMES RPi2
-  make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- bcm2709_defconfig # ASSUMES RPi2
+  cp $ROOT/kernconf $ROOT/linux/.config
   make -j`nproc` ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- zImage modules dtbs
-
+  
   # Install modules
   make ARCH=arm CROSS_COMPILE=arm-linux-gnueabihf- INSTALL_MOD_PATH=$ROOTFS modules_install
 }
@@ -276,15 +279,19 @@ generate_initramfs()
 {
   cd $ROOT/linux
   kversion=$(strings arch/arm/boot/Image  | grep -i modversions | awk '{print $1}')
-
+  
   ########################
   # Initramfs setup
   ########################
-
+  
   # Install live boot, which will be needed for generating live initramfs
   cexec apt-get -f install -y live-boot
+
+  # Newer kernels renamed overlayfs to overlay, and require a workdir.
+  patch  -B  /tmp/gargbage -r - --forward $ROOTFS/lib/live/boot/9990-misc-helpers.sh < $ROOT/9990-misc-helpers.patch
+
   cexec update-initramfs -c -k $kversion
-  cp $ROOTFS/boot/initrd.img-$kversion $BOOT/initrd.img
+  cp $ROOTFS/boot/initrd.img-$kversion $BOOT/initrd.img  
 }
 
 live_system()
@@ -306,21 +313,21 @@ EOF
 package_boot_dir()
 {
   cd $ROOT/linux
-  echo "dwc_otg.lpm_enable=0 console=ttyAMA0,115200 console=tty1 root=/dev/mmcblk0p2 rootfstype=ext4 elevator=deadline rootwait boot=live live-media=/dev/mmcblk0p1" > $BOOT/cmdline.txt
+  echo "dwc_otg.lpm_enable=0 console=ttyAMA0,115200 console=tty1 root=/dev/mmcblk0p2 rootfstype=ext4 elevator=deadline rootwait boot=live live-media=/dev/mmcblk0p1 union=overlayfs ip=frommedia" > $BOOT/cmdline.txt
 
   cat > $BOOT/config.txt << EOF
 initramfs initrd.img
 EOF
   # Copy kernel to BOOT
   ./scripts/mkknlimg arch/arm/boot/zImage $BOOT/kernel.img
-
+  
   # Set up device tree binaries
   cp arch/arm/boot/dts/*.dtb $BOOT
   mkdir -p $BOOT/overlays/
   cp arch/arm/boot/dts/overlays/*.dtb* $BOOT/overlays/
-
+  
   # Copy magic firmware files
-
+  
   cd /tmp
   wget https://github.com/raspberrypi/firmware/archive/master.tar.gz
   tar -xpf master.tar.gz

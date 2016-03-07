@@ -1,0 +1,18 @@
+--- /lib/live/boot/9990-misc-helpers.sh	2013-04-28 22:27:06.000000000 +0000
++++ 9990-misc-helpers.sh	2016-03-07 03:22:01.308081170 +0000
+@@ -1249,8 +1249,13 @@
+ 			then
+ 				panic "Overlayfs needs at least one lower filesystem (read-only branch)."
+ 			fi
+-			unionmountopts="-o noatime,lowerdir=${unionro},upperdir=${unionrw}"
+-			mount -t ${UNIONTYPE} ${unionmountopts} ${UNIONTYPE} "${unionmountpoint}"
++
++			# Prepare
++			mkdir -p "${unionrw}/upper"
++			mkdir -p "${unionrw}/work"
++
++			unionmountopts="-o noatime,lowerdir=${unionro},upperdir=${unionrw}/upper,workdir=${unionrw}/work"
++			mount -t overlay ${unionmountopts} overlay "${unionmountpoint}"
+ 			;;
+ 
+ 		*)
